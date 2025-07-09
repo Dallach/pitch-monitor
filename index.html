@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Pitch Monitor Widget</title>
+    <style>
+        :root {
+            --background-gradient: linear-gradient(135deg, #232526 0%, #414345 100%);
+            --widget-bg: #000000;
+            --widget-header-footer-bg: rgba(255,255,255,0.04);
+            --text-color: #ecf0f1;
+            --icon-color: #bdc3c7;
+            --icon-hover-color: #ffffff;
+            --icon-hover-bg: rgba(255, 255, 255, 0.15);
+            --grid-line-color: rgba(255, 255, 255, 0.15);
+            --key-grid-line-color: rgba(255, 255, 255, 0.4);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { touch-action: manipulation; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            background: var(--background-gradient);
+            color: var(--text-color);
+            min-height: 100vh;
+            padding: 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        
+        .pitch-widget {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            width: 100%;
+            max-width: 900px;
+            margin: auto;
+            background: var(--widget-bg);
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .widget-header, .widget-footer {
+            background: var(--widget-header-footer-bg);
+            padding: 4px 15px;
+            display: flex;
+            align-items: center;
+        }
+
+        .widget-header {
+            justify-content: space-between;
+        }
+        
+        .widget-footer {
+            justify-content: space-around;
+            min-height: 45px;
+            position: relative;
+        }
+        
+        .controls-left {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .icon-button {
+            background: none; border: none; cursor: pointer; padding: 6px;
+            border-radius: 50%; display: flex; transition: all 0.2s ease;
+        }
+        .icon-button:hover { background-color: var(--icon-hover-bg); }
+        .icon-button svg {
+            width: 20px; height: 20px;
+            fill: var(--icon-color); transition: fill 0.2s ease;
+        }
+        .icon-button:hover svg { fill: var(--icon-hover-color); }
+
+        #startStopBtn.running .record-icon { display: none; }
+        #startStopBtn:not(.running) .pause-icon { display: none; }
+
+        .custom-select { position: relative; }
+        .select-button {
+            background-color: rgba(0,0,0,0.2); padding: 5px 12px;
+            border-radius: 20px; cursor: pointer; display: flex;
+            align-items: center; gap: 8px; transition: background-color 0.2s ease;
+        }
+        .select-button:hover { background-color: rgba(0,0,0,0.4); }
+        #selected-key { font-weight: 500; font-size: 0.9em; }
+        .select-button svg { width: 14px; height: 14px; fill: var(--icon-color); }
+        
+        .select-options {
+            visibility: hidden; opacity: 0; position: absolute;
+            top: 115%; right: 0; background: #2c3e50;
+            border-radius: 8px; padding: 5px; z-index: 10;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            transition: all 0.2s ease; max-height: 200px; overflow-y: auto;
+        }
+        .select-options.visible { visibility: visible; opacity: 1; }
+        .select-options div {
+            padding: 8px 15px; cursor: pointer; border-radius: 5px;
+            white-space: nowrap; font-size: 0.9em;
+        }
+        .select-options div:hover { background-color: #34495e; }
+
+        #pitchCanvas { display: block; width: 100%; height: 450px; }
+        
+        .info-item { text-align: center; }
+        .info-item .value {
+            font-size: 1.4em;
+            font-weight: 500;
+            font-family: monospace;
+        }
+        #note-display .value {
+            font-weight: 700;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        }
+
+        .octave-legend {
+            position: absolute; right: 15px;
+            bottom: 50%; transform: translateY(50%);
+            display: flex; gap: 6px; align-items: center;
+        }
+        .legend-item { display: flex; align-items: center; gap: 4px; }
+        .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .legend-label { font-size: 0.75em; font-weight: 500; }
+        
+        @media (max-width: 768px) {
+            body { align-items: flex-start; padding: 10px; }
+            .pitch-widget { border-radius: 12px; }
+            #pitchCanvas { height: 350px; }
+            .info-item .value { font-size: 1.1em; }
+            .octave-legend { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="pitch-widget">
+        <header class="widget-header">
+            <div class="controls-left">
+                 <button id="startStopBtn" class="icon-button" aria-label="Start or stop monitoring">
+                    <svg class="record-icon" viewBox="0 0 24 24"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm0,18a8,8,0,1,1,8-8A8,8,0,0,1,12,20Z"/><circle cx="12" cy="12" r="5"/></svg>
+                    <svg class="pause-icon" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>
+                </button>
+                <button id="clearBtn" class="icon-button" aria-label="Clear history">
+                    <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+                </button>
+            </div>
+            <div class="custom-select">
+                <div class="select-button">
+                    <span id="selected-key">C Major</span>
+                    <svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"></path></svg>
+                </div>
+                <div class="select-options"></div>
+            </div>
+        </header>
+
+        <div class="canvas-container">
+            <canvas id="pitchCanvas"></canvas>
+        </div>
+
+        <footer class="widget-footer">
+            <div id="note-display" class="info-item">
+                <div id="note" class="value">--</div>
+            </div>
+             <div class="info-item">
+                <div id="cents" class="value">--</div>
+            </div>
+             <div class="info-item">
+                <div id="frequency" class="value">--</div>
+            </div>
+            <div class="octave-legend"></div>
+        </footer>
+    </div>
+
+    <script>
+        class PitchMonitor {
+            constructor() {
+                this.audioContext = null;
+                this.analyser = null;
+                this.microphone = null;
+                this.dataArray = null;
+                this.canvas = document.getElementById('pitchCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.isRunning = false;
+                this.pitchHistory = [];
+                this.maxHistory = 300;
+                
+                this.noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+                this.keyOptions = [ 'C Major', 'G Major', 'D Major', 'A Major', 'E Major', 'B Major', 'F# Major', 'C# Major', 'F Major', 'Bb Major', 'Eb Major', 'Ab Major', 'Chromatic' ];
+                this.keyMap = { 'C Major':'C', 'G Major':'G', 'D Major':'D', 'A Major':'A', 'E Major':'E', 'B Major':'B', 'F# Major':'F#', 'C# Major':'C#', 'F Major':'F', 'Bb Major':'Bb', 'Eb Major':'Eb', 'Ab Major':'Ab', 'Chromatic': 'Chromatic' };
+
+                this.keySignatures = this.generateKeySignatures();
+                this.currentKey = 'C';
+                
+                this.octaveColors = {
+                    '3': '#4ECDC4', '4': '#F9D423', '5': '#FF6B6B', '6': '#A06AB4'
+                };
+                
+                this.allNotes = [];
+                for (let octave = 2; octave <= 6; octave++) {
+                    for (let noteIndex = 0; noteIndex < 12; noteIndex++) {
+                        const distanceFromA4 = (octave - 4) * 12 + (noteIndex - 9);
+                        const frequency = 440 * Math.pow(2, distanceFromA4 / 12);
+                        this.allNotes.push({ name: `${this.noteNames[noteIndex]}${octave}`, frequency, octave, noteIndex });
+                    }
+                }
+                
+                this.startStopBtn = document.getElementById('startStopBtn');
+                
+                this.setupCanvas();
+                this.setupEventListeners();
+                this.populateOctaveLegend();
+                this.drawVisualization();
+            }
+            
+            generateKeySignatures() {
+                const noteMap = { 'C':0, 'C#':1, 'D':2, 'E':4, 'F':5, 'F#':6, 'G':7, 'A':9, 'B':11, 'Bb':10, 'Eb':3, 'Ab':8 };
+                const signatures = { 'Chromatic': null };
+                const majorScalePattern = [0, 2, 4, 5, 7, 9, 11];
+                for (const key in noteMap) {
+                    const rootIndex = noteMap[key];
+                    signatures[key] = majorScalePattern.map(interval => (rootIndex + interval) % 12);
+                }
+                return signatures;
+            }
+
+            setupCanvas() {
+                const dpr = window.devicePixelRatio || 1;
+                this.canvas.width = this.canvas.offsetWidth * dpr;
+                this.canvas.height = this.canvas.offsetHeight * dpr;
+                this.ctx.scale(dpr, dpr);
+            }
+
+            populateOctaveLegend() {
+                const legendContainer = document.querySelector('.octave-legend');
+                legendContainer.innerHTML = '';
+                for (const octave in this.octaveColors) {
+                    const item = document.createElement('div');
+                    item.className = 'legend-item';
+                    const dot = document.createElement('div');
+                    dot.className = 'legend-dot';
+                    dot.style.backgroundColor = this.octaveColors[octave];
+                    const label = document.createElement('span');
+                    label.className = 'legend-label';
+                    label.textContent = octave;
+                    item.appendChild(dot);
+                    item.appendChild(label);
+                    legendContainer.appendChild(item);
+                }
+            }
+            
+            setupEventListeners() {
+                this.startStopBtn.addEventListener('click', () => this.isRunning ? this.stop() : this.start());
+                document.getElementById('clearBtn').addEventListener('click', () => this.clearHistory());
+                
+                const selectButton = document.querySelector('.select-button');
+                const selectOptions = document.querySelector('.select-options');
+                const selectedKeySpan = document.getElementById('selected-key');
+                
+                this.keyOptions.forEach(keyName => {
+                    const optionDiv = document.createElement('div');
+                    optionDiv.textContent = keyName;
+                    optionDiv.dataset.value = this.keyMap[keyName];
+                    selectOptions.appendChild(optionDiv);
+                    
+                    optionDiv.addEventListener('click', () => {
+                        this.currentKey = optionDiv.dataset.value;
+                        selectedKeySpan.textContent = keyName;
+                        this.drawVisualization();
+                    });
+                });
+
+                selectButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectOptions.classList.toggle('visible');
+                });
+                document.addEventListener('click', () => selectOptions.classList.remove('visible'));
+
+                window.addEventListener('resize', () => {
+                    this.setupCanvas();
+                    this.drawVisualization();
+                });
+            }
+            
+            async start() {
+                if (this.isRunning) return;
+                
+                if (!this.audioContext || this.audioContext.state === 'closed') {
+                    try {
+                        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        this.analyser = this.audioContext.createAnalyser();
+                        this.microphone = this.audioContext.createMediaStreamSource(stream);
+                        this.analyser.fftSize = 8192;
+                        this.dataArray = new Float32Array(this.analyser.frequencyBinCount);
+                        this.microphone.connect(this.analyser);
+                    } catch (error) {
+                        alert('Microphone access denied. Please allow microphone access in your browser settings.');
+                        this.audioContext = null;
+                        return;
+                    }
+                }
+                
+                this.isRunning = true;
+                this.startStopBtn.classList.add('running');
+                this.animate();
+            }
+            
+            stop() {
+                if (!this.isRunning) return;
+                this.isRunning = false;
+                this.startStopBtn.classList.remove('running');
+            }
+            
+            clearHistory() {
+                this.pitchHistory = [];
+                this.drawVisualization();
+            }
+            
+            detectPitch() {
+                if (!this.analyser) return null;
+                this.analyser.getFloatFrequencyData(this.dataArray);
+                let maxVal = -Infinity, maxIndex = -1;
+                for (let i = 0; i < this.dataArray.length; i++) {
+                    if (this.dataArray[i] > maxVal) { maxVal = this.dataArray[i]; maxIndex = i; }
+                }
+                if (maxVal < -60) return null;
+                const binWidth = this.audioContext.sampleRate / this.analyser.fftSize;
+                if (maxIndex > 0 && maxIndex < this.dataArray.length - 1) {
+                    const [dL, dC, dR] = [this.dataArray[maxIndex - 1], this.dataArray[maxIndex], this.dataArray[maxIndex + 1]];
+                    const offset = 0.5 * (dR - dL) / (2 * dC - dL - dR);
+                    const freq = (maxIndex + (isNaN(offset) ? 0 : offset)) * binWidth;
+                    const minAllowedFreq = this.allNotes[0].frequency;
+                    const maxAllowedFreq = this.allNotes[this.allNotes.length - 1].frequency;
+                    return (freq >= minAllowedFreq && freq <= maxAllowedFreq) ? freq : null;
+                }
+                return null;
+            }
+            
+            getOctave(frequency) {
+                if (!frequency) return null;
+                const midiNum = 12 * Math.log2(frequency / 440) + 69;
+                return Math.floor(midiNum / 12) - 1;
+            }
+
+            frequencyToNote(frequency) {
+                if (!frequency) return { note: '--', octave: '--', cents: '--', frequency: '--' };
+                let closestNote = this.allNotes[0], minDiff = Infinity;
+                for (const note of this.allNotes) {
+                    const diff = Math.abs(frequency - note.frequency);
+                    if (diff < minDiff) { minDiff = diff; closestNote = note; }
+                }
+                const cents = Math.round(1200 * Math.log2(frequency / closestNote.frequency));
+                return { 
+                    note: this.noteNames[closestNote.noteIndex], 
+                    octave: this.getOctave(frequency),
+                    cents: `${cents > 0 ? '+' : ''}${cents}c`,
+                    frequency: `${frequency.toFixed(1)}Hz`
+                };
+            }
+            
+            updateDisplay(frequency) {
+                const noteInfo = this.frequencyToNote(frequency);
+                document.getElementById('note').textContent = noteInfo.note;
+                document.getElementById('frequency').textContent = noteInfo.frequency;
+                document.getElementById('cents').textContent = noteInfo.cents;
+                return noteInfo;
+            }
+            
+            getNoteClass(frequency) {
+                if (!frequency) return null;
+                const semitonesFromA4 = 12 * Math.log2(frequency / 440);
+                return ((semitonesFromA4 + 9) % 12 + 12) % 12;
+            }
+            
+            getNoteClassReps(nc) {
+                if (nc === null) return [];
+                const reps = [nc];
+                if (nc < 1.5) reps.push(nc + 12);
+                if (nc > 10.5) reps.push(nc - 12);
+                return reps;
+            }
+
+            noteClassToY(noteClass) {
+                const height = this.canvas.offsetHeight;
+                const padding = height * 0.05;
+                const drawHeight = height - (padding * 2);
+                return padding + (1 - (noteClass / 12)) * drawHeight;
+            }
+            
+            drawHistorySegment(x1, x2, color, nc1, nc2) {
+                this.ctx.strokeStyle = color;
+                this.ctx.beginPath();
+                this.ctx.moveTo(x1, this.noteClassToY(nc1));
+                this.ctx.lineTo(x2, this.noteClassToY(nc2));
+                this.ctx.stroke();
+            }
+
+            drawVisualization() {
+                const width = this.canvas.offsetWidth;
+                const height = this.canvas.offsetHeight;
+                this.ctx.clearRect(0, 0, width, height);
+                
+                const css = getComputedStyle(document.documentElement);
+                const gridLineColor = css.getPropertyValue('--grid-line-color').trim();
+                const keyLineColor = css.getPropertyValue('--key-grid-line-color').trim();
+                const keyNotes = this.keySignatures[this.currentKey];
+                
+                this.ctx.textBaseline = 'middle';
+                for (let i = 0; i <= 12; i++) {
+                    const y = this.noteClassToY(i);
+                    const noteIndex = i % 12;
+                    const noteName = this.noteNames[noteIndex];
+                    const isInKey = keyNotes && keyNotes.includes(noteIndex);
+                    
+                    this.ctx.lineWidth = isInKey ? 1.5 : 1;
+                    this.ctx.strokeStyle = isInKey ? keyLineColor : gridLineColor;
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, y);
+                    this.ctx.lineTo(width, y);
+                    this.ctx.stroke();
+
+                    this.ctx.font = '12px Arial';
+                    this.ctx.fillStyle = isInKey ? 'rgba(255, 255, 255, 1)' : 'rgba(255, 255, 255, 0.5)';
+                    this.ctx.textAlign = 'left';
+                    this.ctx.fillText(noteName, 10, y);
+                }
+                
+                this.ctx.lineWidth = 2.5;
+                this.ctx.lineCap = 'round';
+                const centerX = width / 2;
+
+                for (let i = 1; i < this.pitchHistory.length; i++) {
+                    const p1 = this.pitchHistory[i - 1], p2 = this.pitchHistory[i];
+                    if (!p1.frequency || !p2.frequency || p1.octave !== p2.octave) continue;
+
+                    const [nc1, nc2] = [this.getNoteClass(p1.frequency), this.getNoteClass(p2.frequency)];
+                    const [nc1_reps, nc2_reps] = [this.getNoteClassReps(nc1), this.getNoteClassReps(nc2)];
+                    
+                    const color = this.octaveColors[p2.octave] || '#ffffff';
+                    
+                    const x1 = centerX - (this.pitchHistory.length - (i - 1));
+                    const x2 = centerX - (this.pitchHistory.length - i);
+
+                    for (const r1 of nc1_reps) {
+                        for (const r2 of nc2_reps) {
+                            if (Math.abs(r1 - r2) < 2.0) this.drawHistorySegment(x1, x2, color, r1, r2);
+                        }
+                    }
+                }
+                
+                const lastPitch = this.pitchHistory[this.pitchHistory.length - 1];
+                if (lastPitch && lastPitch.frequency) {
+                    const nc_reps = this.getNoteClassReps(this.getNoteClass(lastPitch.frequency));
+                    
+                    this.ctx.fillStyle = this.octaveColors[lastPitch.octave] || '#FF6B6B';
+                    this.ctx.shadowColor = this.ctx.fillStyle;
+                    this.ctx.shadowBlur = 12;
+                    
+                    for (const r of nc_reps) {
+                         this.ctx.beginPath();
+                         this.ctx.arc(centerX, this.noteClassToY(r), 5, 0, 2 * Math.PI);
+                         this.ctx.fill();
+                    }
+                    this.ctx.shadowBlur = 0;
+                }
+            }
+            
+            animate() {
+                if (!this.isRunning) return;
+                requestAnimationFrame(() => this.animate());
+                const frequency = this.detectPitch();
+                const noteInfo = this.updateDisplay(frequency);
+                this.pitchHistory.push({ frequency: frequency, octave: noteInfo.octave });
+                if (this.pitchHistory.length > this.maxHistory) this.pitchHistory.shift();
+                this.drawVisualization();
+            }
+        }
+        
+        const pitchMonitor = new PitchMonitor();
+    </script>
+</body>
+</html>
