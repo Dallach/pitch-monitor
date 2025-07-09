@@ -107,32 +107,22 @@
 
         #pitchCanvas { display: block; width: 100%; height: 450px; }
         
-        .info-item { text-align: center; }
+        .info-item { text-align: center; flex-grow: 1; }
         .info-item .value {
-            font-size: 1.4em;
+            font-size: 1.5em; /* Increased font size for better readability */
             font-weight: 500;
             font-family: monospace;
         }
         #note-display .value {
-            font-weight: 700;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+             font-weight: 700;
+             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
         }
-
-        .octave-legend {
-            position: absolute; right: 15px;
-            bottom: 50%; transform: translateY(50%);
-            display: flex; gap: 6px; align-items: center;
-        }
-        .legend-item { display: flex; align-items: center; gap: 4px; }
-        .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
-        .legend-label { font-size: 0.75em; font-weight: 500; }
         
         @media (max-width: 768px) {
             body { align-items: flex-start; padding: 10px; }
             .pitch-widget { border-radius: 12px; }
             #pitchCanvas { height: 350px; }
-            .info-item .value { font-size: 1.1em; }
-            .octave-legend { display: none; }
+            .info-item .value { font-size: 1.2em; }
         }
     </style>
 </head>
@@ -171,7 +161,6 @@
              <div class="info-item">
                 <div id="frequency" class="value">--</div>
             </div>
-            <div class="octave-legend"></div>
         </footer>
     </div>
 
@@ -212,7 +201,6 @@
                 
                 this.setupCanvas();
                 this.setupEventListeners();
-                this.populateOctaveLegend();
                 this.drawVisualization();
             }
             
@@ -234,24 +222,6 @@
                 this.ctx.scale(dpr, dpr);
             }
 
-            populateOctaveLegend() {
-                const legendContainer = document.querySelector('.octave-legend');
-                legendContainer.innerHTML = '';
-                for (const octave in this.octaveColors) {
-                    const item = document.createElement('div');
-                    item.className = 'legend-item';
-                    const dot = document.createElement('div');
-                    dot.className = 'legend-dot';
-                    dot.style.backgroundColor = this.octaveColors[octave];
-                    const label = document.createElement('span');
-                    label.className = 'legend-label';
-                    label.textContent = octave;
-                    item.appendChild(dot);
-                    item.appendChild(label);
-                    legendContainer.appendChild(item);
-                }
-            }
-            
             setupEventListeners() {
                 this.startStopBtn.addEventListener('click', () => this.isRunning ? this.stop() : this.start());
                 document.getElementById('clearBtn').addEventListener('click', () => this.clearHistory());
@@ -364,7 +334,13 @@
             
             updateDisplay(frequency) {
                 const noteInfo = this.frequencyToNote(frequency);
-                document.getElementById('note').textContent = noteInfo.note;
+                
+                // Combine note and octave for display
+                const displayNote = (noteInfo.note !== '--' && noteInfo.octave !== '--')
+                    ? `${noteInfo.note}${noteInfo.octave}`
+                    : '--';
+                
+                document.getElementById('note').textContent = displayNote;
                 document.getElementById('frequency').textContent = noteInfo.frequency;
                 document.getElementById('cents').textContent = noteInfo.cents;
                 return noteInfo;
