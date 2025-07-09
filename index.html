@@ -109,7 +109,7 @@
         
         .info-item { text-align: center; flex-grow: 1; }
         .info-item .value {
-            font-size: 1.5em; /* Increased font size for better readability */
+            font-size: 1.5em; 
             font-weight: 500;
             font-family: monospace;
         }
@@ -175,7 +175,6 @@
                 this.ctx = this.canvas.getContext('2d');
                 this.isRunning = false;
                 this.pitchHistory = [];
-                this.maxHistory = 300;
                 
                 this.noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
                 this.keyOptions = [ 'C Major', 'G Major', 'D Major', 'A Major', 'E Major', 'B Major', 'F# Major', 'C# Major', 'F Major', 'Bb Major', 'Eb Major', 'Ab Major', 'Chromatic' ];
@@ -220,6 +219,7 @@
                 this.canvas.width = this.canvas.offsetWidth * dpr;
                 this.canvas.height = this.canvas.offsetHeight * dpr;
                 this.ctx.scale(dpr, dpr);
+                this.maxHistory = this.canvas.offsetWidth; // Set max history based on canvas width
             }
 
             setupEventListeners() {
@@ -335,7 +335,6 @@
             updateDisplay(frequency) {
                 const noteInfo = this.frequencyToNote(frequency);
                 
-                // Combine note and octave for display
                 const displayNote = (noteInfo.note !== '--' && noteInfo.octave !== '--')
                     ? `${noteInfo.note}${noteInfo.octave}`
                     : '--';
@@ -408,9 +407,9 @@
                 
                 this.ctx.lineWidth = 2.5;
                 this.ctx.lineCap = 'round';
-                const centerX = width / 2;
-
-                for (let i = 1; i < this.pitchHistory.length; i++) {
+                
+                const historyLength = this.pitchHistory.length;
+                for (let i = 1; i < historyLength; i++) {
                     const p1 = this.pitchHistory[i - 1], p2 = this.pitchHistory[i];
                     if (!p1.frequency || !p2.frequency || p1.octave !== p2.octave) continue;
 
@@ -419,8 +418,8 @@
                     
                     const color = this.octaveColors[p2.octave] || '#ffffff';
                     
-                    const x1 = centerX - (this.pitchHistory.length - (i - 1));
-                    const x2 = centerX - (this.pitchHistory.length - i);
+                    const x1 = width - (historyLength - (i - 1));
+                    const x2 = width - (historyLength - i);
 
                     for (const r1 of nc1_reps) {
                         for (const r2 of nc2_reps) {
@@ -428,7 +427,8 @@
                         }
                     }
                 }
-                
+
+                // Restore the glowing dot for the current pitch
                 const lastPitch = this.pitchHistory[this.pitchHistory.length - 1];
                 if (lastPitch && lastPitch.frequency) {
                     const nc_reps = this.getNoteClassReps(this.getNoteClass(lastPitch.frequency));
@@ -439,7 +439,7 @@
                     
                     for (const r of nc_reps) {
                          this.ctx.beginPath();
-                         this.ctx.arc(centerX, this.noteClassToY(r), 5, 0, 2 * Math.PI);
+                         this.ctx.arc(width, this.noteClassToY(r), 5, 0, 2 * Math.PI);
                          this.ctx.fill();
                     }
                     this.ctx.shadowBlur = 0;
