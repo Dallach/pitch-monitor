@@ -161,7 +161,10 @@
              <div class="info-item">
                 <div id="frequency" class="value">--</div>
             </div>
-        </footer>
+             <div id="db-display" class="info-item">
+                <div id="decibel" class="value">--</div>
+            </div>
+            </footer>
     </div>
 
     <script>
@@ -170,11 +173,13 @@
                 this.audioContext = null;
                 this.analyser = null;
                 this.microphone = null;
-                this.dataArray = null;
+                this.dataArray = null; 
                 this.canvas = document.getElementById('pitchCanvas');
                 this.ctx = this.canvas.getContext('2d');
                 this.isRunning = false;
                 this.pitchHistory = [];
+
+                this.dbValue = document.getElementById('decibel');
                 
                 this.noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
                 this.keyOptions = [ 'C Major', 'G Major', 'D Major', 'A Major', 'E Major', 'B Major', 'F# Major', 'C# Major', 'F Major', 'Bb Major', 'Eb Major', 'Ab Major', 'Chromatic' ];
@@ -219,7 +224,7 @@
                 this.canvas.width = this.canvas.offsetWidth * dpr;
                 this.canvas.height = this.canvas.offsetHeight * dpr;
                 this.ctx.scale(dpr, dpr);
-                this.maxHistory = this.canvas.offsetWidth; // Set max history based on canvas width
+                this.maxHistory = this.canvas.offsetWidth;
             }
 
             setupEventListeners() {
@@ -283,6 +288,7 @@
                 if (!this.isRunning) return;
                 this.isRunning = false;
                 this.startStopBtn.classList.remove('running');
+                this.updateDecibelDisplay(null);
             }
             
             clearHistory() {
@@ -291,23 +297,44 @@
             }
             
             detectPitch() {
-                if (!this.analyser) return null;
+                if (!this.analyser) return { frequency: null, index: null };
                 this.analyser.getFloatFrequencyData(this.dataArray);
-                let maxVal = -Infinity, maxIndex = -1;
+                
+                let maxVal = -Infinity;
+                let maxIndex = -1;
                 for (let i = 0; i < this.dataArray.length; i++) {
-                    if (this.dataArray[i] > maxVal) { maxVal = this.dataArray[i]; maxIndex = i; }
+                    if (this.dataArray[i] > maxVal) { 
+                        maxVal = this.dataArray[i]; 
+                        maxIndex = i; 
+                    }
                 }
-                if (maxVal < -60) return null;
+
+                if (maxVal < -60) return { frequency: null, index: null };
+
                 const binWidth = this.audioContext.sampleRate / this.analyser.fftSize;
                 if (maxIndex > 0 && maxIndex < this.dataArray.length - 1) {
                     const [dL, dC, dR] = [this.dataArray[maxIndex - 1], this.dataArray[maxIndex], this.dataArray[maxIndex + 1]];
                     const offset = 0.5 * (dR - dL) / (2 * dC - dL - dR);
                     const freq = (maxIndex + (isNaN(offset) ? 0 : offset)) * binWidth;
+                    
                     const minAllowedFreq = this.allNotes[0].frequency;
                     const maxAllowedFreq = this.allNotes[this.allNotes.length - 1].frequency;
-                    return (freq >= minAllowedFreq && freq <= maxAllowedFreq) ? freq : null;
+                    const isAllowed = freq >= minAllowedFreq && freq <= maxAllowedFreq;
+                    
+                    return {
+                        frequency: isAllowed ? freq : null,
+                        index: isAllowed ? maxIndex : null
+                    };
                 }
-                return null;
+                return { frequency: null, index: null };
+            }
+
+            getDecibels(pitchBinIndex) {
+                if (pitchBinIndex === null || !this.analyser || !this.dataArray) {
+                    return null;
+                }
+                const db = this.dataArray[pitchBinIndex];
+                return (db > this.analyser.minDecibels) ? db : null;
             }
             
             getOctave(frequency) {
@@ -334,15 +361,17 @@
             
             updateDisplay(frequency) {
                 const noteInfo = this.frequencyToNote(frequency);
-                
-                const displayNote = (noteInfo.note !== '--' && noteInfo.octave !== '--')
-                    ? `${noteInfo.note}${noteInfo.octave}`
-                    : '--';
+                const displayNote = (noteInfo.note !== '--' && noteInfo.octave !== '--') ? `${noteInfo.note}${noteInfo.octave}` : '--';
                 
                 document.getElementById('note').textContent = displayNote;
                 document.getElementById('frequency').textContent = noteInfo.frequency;
                 document.getElementById('cents').textContent = noteInfo.cents;
                 return noteInfo;
+            }
+
+            updateDecibelDisplay(db) {
+                if (!this.dbValue) return;
+                this.dbValue.textContent = (db === null) ? '--' : `${db.toFixed(0)}dB`;
             }
             
             getNoteClass(frequency) {
@@ -428,7 +457,6 @@
                     }
                 }
 
-                // Restore the glowing dot for the current pitch
                 const lastPitch = this.pitchHistory[this.pitchHistory.length - 1];
                 if (lastPitch && lastPitch.frequency) {
                     const nc_reps = this.getNoteClassReps(this.getNoteClass(lastPitch.frequency));
@@ -449,9 +477,11 @@
             animate() {
                 if (!this.isRunning) return;
                 requestAnimationFrame(() => this.animate());
-                const frequency = this.detectPitch();
-                const noteInfo = this.updateDisplay(frequency);
-                this.pitchHistory.push({ frequency: frequency, octave: noteInfo.octave });
+                const pitchData = this.detectPitch();
+                const decibels = this.getDecibels(pitchData.index);
+                const noteInfo = this.updateDisplay(pitchData.frequency);
+                this.updateDecibelDisplay(decibels);
+                this.pitchHistory.push({ frequency: pitchData.frequency, octave: noteInfo.octave });
                 if (this.pitchHistory.length > this.maxHistory) this.pitchHistory.shift();
                 this.drawVisualization();
             }
